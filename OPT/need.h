@@ -25,7 +25,7 @@ int exepageptr = 0; //执行指令所在虚拟页次序位置，OPT使用
 std::string ordertype[5] = { "随机","顺序","分支","跳转","循环" };
 
 const int ramlen = 512; //内存长度512
-int ram[ramlen]; //内存
+int ram[ramlen] = {0}; //内存
 int pagelen = 128; //每页默认长度128
 //int pagenum = 4;   //默认分4页
 
@@ -59,6 +59,8 @@ typedef struct RamCtl
 	int rpageUsednum = 0; //已使用页框数
 	rPagetable rtable[10];//内存管理表， 页框号对应的进程虚拟页号
 	int* rpageptr[10];//指向各个页框起始地址
+
+	int RpageUsedTimes[10] = { 0 };//rpage使用间隔 LRU使用
 };
 
 ProcCtl pCtl;//进程控制块
@@ -73,7 +75,7 @@ int  LRU();
 //OPT调度算法
 int OPT();
 
-int (*selectAlg[2])() = { LRU,OPT };
+int (*selectAlg[2])() = { OPT,LRU };
 int  selectAlgnum = 0; //选择哪种淘汰算法
 int do_page_fault(int pnum);
 int vaddrToraddr(int vaddr);

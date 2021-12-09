@@ -28,6 +28,8 @@ void OrderPadding()
 {
 	int codeip = 0; //代码位置指针ip，指向下一条执行的指令的地址，不可超过processlen
 	int code = 0; //指令的具体值
+	exelen = 1;//exelen 重置为1
+
 
 	//根据process中的数据确定执行顺序
 	while (1)
@@ -134,6 +136,7 @@ void OrderPadding()
 void PageOrderPadding()
 {
 	int codeip = 0;
+	exepagelen = 0;
 	for (int i = 0; i < exelen; i++)
 	{
 		codeip = exeorder[i];
@@ -176,8 +179,9 @@ int PageInit()
 	return 0;
 }
 
-//初始化
-void init()
+
+
+void parainput()
 {
 	std::string s;
 	std::string v = "";
@@ -212,6 +216,14 @@ void init()
 	}
 #endif // !DEBUG
 	printf("\n");
+
+	
+}
+
+
+//初始化
+void init()
+{
 	
 
 	PageInit();
@@ -222,21 +234,34 @@ void init()
 	OrderPadding(); 
 	PageOrderPadding();
 #else
-	int codeipOrder[5] = { 0,128,256,512,1024 };
-
-	for (int i = 0; i < 5; i++)
+	int codeipOrder[] = { 0,128,256,512,1024,1,2,513, 257};
+	int size = 9;
+	for (int i = 0; i < size; i++)
 	{
 		exeorder[exelen++] =  codeipOrder[i];
 	}
 	PageOrderPadding();
 #endif // !DEBUG
-	
+	memset(ram, 0, ramlen); //清理内存
+
 }
 
 //LRU调度算法
 int  LRU()
 {
 	int selectedrpagenum = -1;
+	int farthest = 0;
+
+	for (int i = 0; i < rCtl.rpagenum; i++)
+	{
+		if (rCtl.RpageUsedTimes[i] >= farthest)
+		{
+			farthest = rCtl.RpageUsedTimes[i];
+			selectedrpagenum = i;
+		}
+
+	}
+
 	return selectedrpagenum;
 }
 
@@ -248,31 +273,112 @@ int OPT()
 	int selectedrpagenum = -1;
 	
 	const int RamPageNum = rCtl.rpagenum; //内存页框
-	int vPageInrPage[16] = { 0 }; //每个页框中的虚拟页号
-	int WaitToFindvPagenum = RamPageNum; //等待寻找的虚拟页数
-	int vPageExpectOrder[16] = { 0 };//每个页框中所存的虚拟页面最早出现的次序
+
+	//int vPageInrPage[16] = { 0 }; //每个页框中的虚拟页号，废弃
+	//int WaitToFindvPagenum = RamPageNum; //等待寻找的虚拟页数，\
+										一次扫描后续页数可以使用，此处采用多次扫描，故废弃
+	
+	int vPageInterval[16] = { 0 };//每个页框中所存的虚拟页面下一次使用的间隔,大于
 	int FarthestTime = 0; //使用页框中虚拟页的最远距离
 
-	
-	
+	int nowcodeptr = exeorderptr;//当前指令位置
+	int nowpageorderptr = exepageptr; //当前指令所在页的次序
 
+
+	int nowcode = -1;// 当前指令
+
+	//int codenext = -1;//下一条指令
+	//int nowvpageptr = exeorderptr;//当前指令所在页,废弃
+
+	int vpagetofind = -1; //当前需要寻找的虚拟页号
+
+
+	printf("\n--------------------------------\n");
+	printf("raddr\tvaddr\n");
 	for (int i = 0; i < RamPageNum; i++)
 	{
-		vPageInrPage[i] = rCtl.rtable[i].vpagenum;
+		printf("%d\t%d\n", i, rCtl.rtable[i].vpagenum);
 	}
-
-	int codeptr = exeorderptr;//当前指令位置
-	int vpageptr = exeorderptr;//当前指令所在页
-	//判断下一条指令是否还在当前页中，是则当前页举例为0，表示立即需要使用
-	
+	printf("\n--------------------------------\n");
 
 
-	while (true)
+
+	//逐一寻找每个虚拟页的使用间隔
+	for (int i = 0; i < RamPageNum; i++)
 	{
+		//vPageInrPage[i] = rCtl.rtable[i].vpagenum;
+		vpagetofind= rCtl.rtable[i].vpagenum;
 
+		//先比较即将执行的下一条指令是否在已经在此页中,即nowcode
+		if (nowcodeptr< exelen)
+		{
+			
+			//可能会出现缺页中断，于是直接从process 中调指令，在实际中会损失速度，但是此处只是模拟
+			//nowcode = process[exeorder[nowcodeptr]];//当前指令
+			
+			int nowvpagenum = exeorder[exeorderptr] / pagelen; //当前指令的页号
+
+			if (nowvpagenum == vpagetofind) 
+			{   
+				
+
+				//下一条指令的页号就是我们要找的页号，则间隔为0
+				vPageInterval[i] = 0;
+			}	
+			else
+			{
+				//下一条指令不在我们要找的页中，则需要借助 exepageorder向后寻找
+				int interval = 1;
+
+				//寻找多少比较难判断
+				while (true)
+				{
+					//间隔页号
+					int vpagenumInterval = exepageorder[nowpageorderptr + interval];
+
+					if (vpagenumInterval == vpagetofind)
+					{
+						//找到该页号的位置
+						vPageInterval[i] = interval;
+
+						break;
+					}
+					else
+					{
+						interval++;
+					}
+
+					if (nowpageorderptr + interval >= exepagelen)
+					{
+						break;
+					}
+				}
+
+
+
+			}
+		}
+		else
+		{
+			//没有下一条指令，则当前指令为最后一条指令，直接选择0号也替换
+			selectedrpagenum = 0;
+			return selectedrpagenum;
+
+		}
 
 	}
 
+	//选择间隔最大的淘汰
+	int farthest = 0;
+	for (int i = 0; i < RamPageNum; i++)
+	{
+		if (vPageInterval[i] >= farthest)
+		{
+			farthest = vPageInterval[i];
+			selectedrpagenum = i;
+		}
+
+	}
 
 
 	
@@ -295,11 +401,15 @@ int VpageToRpage(int vpnum, int rnum)
 	{
 		*(r + i) = *(v + i);
 	}
+
+	int lastvpnum = rCtl.rtable[rnum].vpagenum; // 原先在页框中的虚拟页号
+	if (lastvpnum >= 0 && lastvpnum < pCtl.vpagenum)
+		pCtl.ptable[lastvpnum].I = 0;//已被覆盖，中断位置0
+
 	pCtl.ptable[vpnum].I = 1; //已调入内存，中断位置1
 	pCtl.ptable[vpnum].rampagenum = rnum;
-	rCtl.rtable[rnum].I = 0; //页框已被占用
+	rCtl.rtable[rnum].I = 0; //页框已被占用，可能本来是被占用的
 	rCtl.rtable[rnum].vpagenum = vpnum;
-
 
 	return 0;
 }
@@ -338,22 +448,43 @@ int do_page_fault(int pnum)
 int Findrampage(int pnum)
 {
 	findtimes++;//访问页次数自增
+	int rrpagenum = -1;
 	if (pCtl.ptable[pnum].I == 0)
 	{
 		//虚拟页尚未调入内存
 		pagefault++;//缺页错误
 
+		printf("缺页处理,虚拟页号 %d\n",pnum);
+
 		//缺页处理
-		int rrpagenum = do_page_fault(pnum);
+		rrpagenum = do_page_fault(pnum);
 		
 		//返回调入的虚拟页所在的页框号
-		return rrpagenum;
+		//return rrpagenum;
 	}
 	else
 	{
 		//虚拟页已在内存中
-		return pCtl.ptable[pnum].rampagenum; // 返回页框号
+		rrpagenum = pCtl.ptable[pnum].rampagenum;
+		
+		if (rrpagenum == -1)
+		{
+			printf("ERROR!\n");
+		}
+		
 	}
+
+	if (selectAlgnum == 1)
+	{
+		for (int i = 0; i < rCtl.rpagenum; i++)
+		{
+			rCtl.RpageUsedTimes[i]++;//未使用页++
+		}
+
+		rCtl.RpageUsedTimes[rrpagenum] = 0;//最近使用的清0
+	}
+
+	return rrpagenum; // 返回页框号
 }
 
 //虚拟地址转为物理地址,输入虚拟地址返回物理地址
@@ -390,11 +521,14 @@ int exe()
 	int codeVaddr = 0; // 指令虚拟地址
 	int codeRaddr = 0; // 指令物理地址
 
+	exeorderptr = 0;
+	exepageptr = 0;
+
 	for (int i = 0; i < exelen; i++,exeorderptr++)
 	{
 		//打印执行序号， 指令虚拟地址， 指令物理地址，指令值
 		if (i % 15 == 0)
-			printf("序号\tvaddr\traddr\tvalue\n");
+			printf("\n序号\tvaddr\traddr\trvalue\tvvalue\n");
 		//执行序号， 指令地址， 指令操作，指令值
 		//printf("%d\t %d\t %s\t %d\n", i,exeorder[i],ordertype[exetype[i]].c_str(), process[exeorder[i]]);
 		codeVaddr = exeorder[i];
@@ -402,7 +536,7 @@ int exe()
 		
 
 		if (0 <= codeRaddr && codeRaddr <= ramlen)
-			printf("%d\t%d\t%d\t%d\n", i, codeVaddr, codeRaddr, ram[codeRaddr]); 
+			printf("%d\t%d\t%d\t%d\t%d\n", i, codeVaddr, codeRaddr, ram[codeRaddr],process[codeVaddr]);
 		else
 		{
 			printf("%d\t%d\t%d\n", i, codeVaddr, codeRaddr);
@@ -412,9 +546,59 @@ int exe()
 	return 0;
 }
 
+
+void test01()
+{
+	parainput();
+	init();
+	findtimes = 0;//访问页次数
+	pagefault = 0;//缺页次数统计
+	selectAlgnum = 0;
+	exe();
+	double OPTfaultrate = double(pagefault) / double(findtimes);
+
+	findtimes = 0;//访问页次数
+	pagefault = 0;//缺页次数统计
+	selectAlgnum = 1;
+	exe();
+	double LRUfaultrate = double(pagefault) / double(findtimes);
+
+	printf("OPT缺页率%f\nLRU缺页率%f\n", OPTfaultrate, LRUfaultrate);
+}
+
+//存在严重的内存管理问题
+void test02()
+{
+	int testnum = 5;
+	double OPTfaultrate = 0;
+	double LRUfaultrate = 0;
+	parainput();
+
+	for (int i = 0; i < testnum; i++)
+	{
+		init();
+		findtimes = 0;//访问页次数
+		pagefault = 0;//缺页次数统计
+		selectAlgnum = 0;
+		exe();
+		OPTfaultrate += double(pagefault) / double(findtimes);
+
+		findtimes = 0;//访问页次数
+		pagefault = 0;//缺页次数统计
+		selectAlgnum = 1;
+		exe();
+		LRUfaultrate += double(pagefault) / double(findtimes);
+	}
+
+	printf("OPT缺页率%f\nLRU缺页率%f\n", OPTfaultrate / testnum, LRUfaultrate / testnum);
+
+}
+
+
 int main()
 {
-	init();
-	exe();
+	
+	test01();
+
 	return 0;
 }
